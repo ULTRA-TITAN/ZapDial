@@ -1,0 +1,45 @@
+--- app/src/main/java/com/titan/zapdial/HomeScreen.kt
++++ app/src/main/java/com/titan/zapdial/HomeScreen.kt
+@@ -620,13 +620,16 @@
+ 
+ @Composable
+ fun SettingsSheet() {
++    val context = LocalContext.current
++    val sharedPrefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
++
+     Column(
+         modifier = Modifier
+             .fillMaxWidth()
+             .padding(24.dp)
+     ) {
+         Text("Settings", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = ColorPureBlack)
+         Spacer(modifier = Modifier.height(24.dp))
+         
+         var soundEnabled by remember { mutableStateOf(true) }
+         var hapticsEnabled by remember { mutableStateOf(true) }
++        var mistouchPrevention by remember {
++            mutableStateOf(sharedPrefs.getBoolean("KEY_MISTOUCH_PREVENTION", false))
++        }
+         
+         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+             Text("Sound & Ringtones", fontSize = 18.sp, color = ColorPureBlack, modifier = Modifier.weight(1f))
+@@ -638,6 +641,19 @@
+             Text("Haptic Feedback", fontSize = 18.sp, color = ColorPureBlack, modifier = Modifier.weight(1f))
+             Switch(checked = hapticsEnabled, onCheckedChange = { hapticsEnabled = it })
+         }
++        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
++            Column(modifier = Modifier.weight(1f)) {
++                Text("Mistouch Prevention", fontSize = 18.sp, color = ColorPureBlack)
++                Text("Confirm before placing calls", fontSize = 14.sp, color = ColorSlateGray)
++            }
++            Switch(
++                checked = mistouchPrevention,
++                onCheckedChange = { checked ->
++                    mistouchPrevention = checked
++                    sharedPrefs.edit().putBoolean("KEY_MISTOUCH_PREVENTION", checked).apply()
++                }
++            )
++        }
+         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp).clickable { /* Blocked */ }, verticalAlignment = Alignment.CenterVertically) {
+             Text("Blocked Numbers", fontSize = 18.sp, color = ColorPureBlack, modifier = Modifier.weight(1f))
+             Icon(imageVector = Icons.Default.Block, contentDescription = null, tint = ColorSlateGray)

@@ -1,0 +1,6 @@
+{
+  "name": "ZapDial",
+  "description": "A minimalist, senior-friendly dialer and launcher app.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,17 @@
+--- app/src/main/java/com/titan/zapdial/HomeScreen.kt
++++ app/src/main/java/com/titan/zapdial/HomeScreen.kt
+@@ -404,2 +404,13 @@
+                         Spacer(modifier = Modifier.width(16.dp))
++                        Text(contact.name, fontSize = 17.sp, fontWeight = FontWeight.Normal, color = TextPrimary)
++                    }
++                }
++            }
++        }
++    }
++}
++
++@Composable
++fun SettingsSheet(
++    showFrequentContacts: Boolean,
++    onFrequentContactsChange: (Boolean) -> Unit,
+     mistouchPrevention: Boolean,

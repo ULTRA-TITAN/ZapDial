@@ -1,0 +1,17 @@
+--- app/src/main/java/com/titan/zapdial/HomeScreen.kt
++++ app/src/main/java/com/titan/zapdial/HomeScreen.kt
+@@ -652,14 +652,2 @@
+     item: HomeCallItem, 
+-                        Text(contact.name, fontSize = 17.sp, fontWeight = FontWeight.Normal, color = TextPrimary)
+-                    }
+-                }
+-            }
+-        }
+-    }
+-}
+-
+-@Composable
+-fun SettingsSheet(
+-    showFrequentContacts: Boolean,
+-    onFrequentContactsChange: (Boolean) -> Unit,
+     mistouchPrevention: Boolean,

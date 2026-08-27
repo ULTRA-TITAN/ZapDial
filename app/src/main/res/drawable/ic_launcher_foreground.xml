@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 
+      Android adaptive icons are 108dp x 108dp. 
+      The safe zone is a 66dp diameter circle in the center.
+      We want the icon to take up 90% of the safe zone (approx 60dp).
+      The original path is on a 24x24 canvas. 
+      We scale it by 2.5 to make it 60x60.
+      We translate it to center it within the 108x108 canvas: (108 - 60)/2 = 24.
+    -->
+    <group
+        android:translateX="24"
+        android:translateY="24"
+        android:scaleX="2.5"
+        android:scaleY="2.5">
+        <path
+            android:fillColor="#16A34A"
+            android:pathData="M20.01,15.38c-1.23,0 -2.42,-0.2 -3.53,-0.56c-0.35,-0.12 -0.74,-0.03 -1.01,0.24l-1.57,1.97c-2.83,-1.35 -5.48,-3.9 -6.89,-6.83l1.95,-1.66c0.27,-0.28 0.35,-0.67 0.24,-1.02c-0.37,-1.11 -0.56,-2.3 -0.56,-3.53c0,-0.55 -0.45,-0.99 -0.99,-0.99L4.59,2.99C4.04,2.99 3.59,3.44 3.59,3.99c0,9.13 7.42,16.55 16.55,16.55c0.55,0 1,-0.45 1,-0.99v-3.18C21.14,15.83 20.69,15.38 20.01,15.38z"/>
+    </group>
+</vector>
