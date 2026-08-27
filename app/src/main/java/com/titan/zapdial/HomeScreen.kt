@@ -34,6 +34,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.TextStyle
 
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.widget.Toast
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.lazy.LazyRow
@@ -117,11 +122,11 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
     }
     var selectedHistoryContact by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
-    val hiddenFavorites = remember { mutableStateListOf<String>() }
+    val favoriteNumbers = remember { mutableStateListOf<String>() }
     
     LaunchedEffect(Unit) {
-        val hidden = sharedPrefs.getStringSet("KEY_HIDDEN_FAVORITES", emptySet()) ?: emptySet()
-        hiddenFavorites.addAll(hidden)
+        val favs = sharedPrefs.getStringSet("KEY_FAVORITES", emptySet()) ?: emptySet()
+        favoriteNumbers.addAll(favs)
     }
     var callToConfirm by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -145,7 +150,31 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
         }
     }
 
+
+    val voiceSearchLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            if (!matches.isNullOrEmpty()) {
+                searchQuery = matches[0]
+            }
+        }
+    }
+    
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            }
+            try { voiceSearchLauncher.launch(intent) } catch (e: Exception) {}
+        }
+    }
+
     LaunchedEffect(hasCallLogPermission, allContacts) {
+
         if (hasCallLogPermission) {
             callHistory = CallLogFetcher.fetchCallHistory(context, defaultLocation, allContacts)
         }
@@ -206,17 +235,21 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
                         BasicTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            modifier = Modifier.fillMaxWidth().padding(start = if (searchQuery.isEmpty()) 0.dp else 32.dp),
+                            modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
                             textStyle = TextStyle(fontSize = 16.sp, color = TextPrimary),
                             singleLine = true
                         )
                     }
 
                     IconButton(onClick = {
-                        val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            }
+                            try { voiceSearchLauncher.launch(intent) } catch (e: Exception) {}
+                        } else {
+                            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
-                        try { context.startActivity(intent) } catch (e: Exception) {}
                     }) {
                         Icon(Icons.Default.Mic, contentDescription = "Voice Search", tint = TextSecondary)
                     }
@@ -275,48 +308,72 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
             
             if (showFrequentContacts) {
                 item {
-                    val frequent = allContacts.filter { !hiddenFavorites.contains(it.phoneNumber) }.take(3)
-                    if (frequent.isNotEmpty()) {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            contentPadding = PaddingValues(start = 8.dp, top = 0.dp, end = 8.dp, bottom = 16.dp)
-                        ) {
-                            items(frequent) { contact ->
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.combinedClickable(
-                                        onClick = {
-                                            if (mistouchPrevention) {
-                                                callToConfirm = Pair(contact.name, contact.phoneNumber)
-                                            } else {
-                                                CallManager.makeCall(context, contact.phoneNumber)
-                                            }
-                                        },
-                                        onLongClick = {
-                                            hiddenFavorites.add(contact.phoneNumber)
-                                            sharedPrefs.edit().putStringSet("KEY_HIDDEN_FAVORITES", hiddenFavorites.toSet()).apply()
-                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    var showContactPicker by remember { mutableStateOf(false) }
+                    if (showContactPicker) {
+                        ModalBottomSheet(onDismissRequest = { showContactPicker = false }, containerColor = PageBackground) {
+                            LazyColumn(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
+                                item {
+                                    Text("Select a Favorite", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+                                }
+                                items(allContacts) { contact ->
+                                    Row(modifier = Modifier.fillMaxWidth().clickable {
+                                        if (!favoriteNumbers.contains(contact.phoneNumber)) {
+                                            favoriteNumbers.add(contact.phoneNumber)
+                                            sharedPrefs.edit().putStringSet("KEY_FAVORITES", favoriteNumbers.toSet()).apply()
                                         }
-                                    )
-                                ) {
-                                    Avatar(name = contact.name, size = 56.dp)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = contact.name.split(" ").firstOrNull() ?: "",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = TextPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                        showContactPicker = false
+                                    }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Avatar(name = contact.name, size = 40.dp)
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Text(contact.name, fontSize = 16.sp)
+                                    }
                                 }
                             }
+                        }
+                    }
+                    
+                    val frequent = allContacts.filter { favoriteNumbers.contains(it.phoneNumber) }.take(3)
+                    
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(start = 8.dp, top = 0.dp, end = 8.dp, bottom = 16.dp)
+                    ) {
+                        items(frequent) { contact ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.combinedClickable(
+                                    onClick = {
+                                        if (mistouchPrevention) {
+                                            callToConfirm = Pair(contact.name, contact.phoneNumber)
+                                        } else {
+                                            CallManager.makeCall(context, contact.phoneNumber)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        favoriteNumbers.remove(contact.phoneNumber)
+                                        sharedPrefs.edit().putStringSet("KEY_FAVORITES", favoriteNumbers.toSet()).apply()
+                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    }
+                                )
+                            ) {
+                                Avatar(name = contact.name, size = 56.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = contact.name.split(" ").firstOrNull() ?: "",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        if (frequent.size < 3) {
                             item {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.clickable {
-                                        val intent = Intent(Intent.ACTION_INSERT, ContactsContract.Contacts.CONTENT_URI)
-                                        try { context.startActivity(intent) } catch(e: Exception) {}
+                                        showContactPicker = true
                                     }
                                 ) {
                                     Box(
@@ -337,13 +394,6 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else {
-                        Text(
-                            text = "No favorites yet.",
-                            fontSize = 14.sp,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(start = 8.dp, top = 0.dp, end = 8.dp, bottom = 16.dp)
-                        )
                     }
                 }
             }
@@ -496,6 +546,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
     }
 }
 
+@androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 fun CallHistoryItemCard(
     item: HomeCallItem, 
@@ -507,6 +558,7 @@ fun CallHistoryItemCard(
     val view = LocalView.current
     var expanded by remember { mutableStateOf(false) }
     var callToConfirm by remember { mutableStateOf<String?>(null) }
+    var showLongPressMenu by remember { mutableStateOf(false) }
     
     val callPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -544,7 +596,7 @@ fun CallHistoryItemCard(
                     onTap = { expanded = !expanded },
                     onLongPress = { 
                         view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                        onDelete(item)
+                        showLongPressMenu = true
                     }
                 )
             }
@@ -647,10 +699,47 @@ fun CallHistoryItemCard(
             }
         }
     }
+
+    if (showLongPressMenu) {
+        ModalBottomSheet(
+            onDismissRequest = { showLongPressMenu = false },
+            containerColor = PlateBackground
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Phone Number", item.number)
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(context, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                        showLongPressMenu = false
+                    }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Copy Phone Number", fontSize = 16.sp)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        onDelete(item)
+                        showLongPressMenu = false
+                    }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Delete Call Log", fontSize = 16.sp, color = Color.Red)
+                }
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
 }
 
 @Composable
 fun Avatar(name: String?, size: androidx.compose.ui.unit.Dp = 40.dp) {
+
     val displayName = name ?: "?"
     val color = getAvatarColor(displayName)
     Box(
