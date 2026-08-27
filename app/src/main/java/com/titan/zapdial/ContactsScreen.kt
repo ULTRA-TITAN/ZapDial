@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlin.math.absoluteValue
 
 // Exact Design System Colors
@@ -122,14 +124,27 @@ fun ContactsScreen() {
         }
     }
 
-    val directory = remember(allContacts) {
-        val map = mutableMapOf<Char, MutableList<Contact>>()
-        allContacts.forEach { contact ->
-            val firstChar = contact.name.firstOrNull()?.uppercaseChar() ?: '#'
-            val key = if (firstChar in LETTERS) firstChar else '#'
-            map.getOrPut(key) { mutableListOf() }.add(contact)
+    var selectedFilter by remember { mutableStateOf("All") }
+    var directory by remember { mutableStateOf<Map<Char, List<Contact>>>(emptyMap()) }
+    
+
+    LaunchedEffect(allContacts, selectedFilter) {
+        withContext(Dispatchers.Default) {
+            val map = mutableMapOf<Char, MutableList<Contact>>()
+            val filtered = allContacts.filter { 
+                when (selectedFilter) {
+                    "SIM 1" -> it.accountName?.contains("SIM", true) == true
+                    "Google" -> it.accountName?.contains("Google", true) == true || it.accountName?.contains("@", true) == true
+                    else -> true
+                }
+            }
+            filtered.forEach { contact ->
+                val firstChar = contact.name.firstOrNull()?.uppercaseChar() ?: '#'
+                val key = if (firstChar in LETTERS) firstChar else '#'
+                map.getOrPut(key) { mutableListOf() }.add(contact)
+            }
+            directory = map.mapValues { it.value.sortedBy { c -> c.name } }
         }
-        map.mapValues { it.value.sortedBy { c -> c.name } }
     }
 
     val rows = remember(directory) {
@@ -169,10 +184,10 @@ fun ContactsScreen() {
     var lastSnappedLetter by remember { mutableStateOf<Char?>(null) }
     var showContactOptionsFor by remember { mutableStateOf<Contact?>(null) }
 
-    val bubbleY = remember { Animatable(0f) }
-    val bubbleScale = remember { Animatable(0.2f) }
-    val bubbleOpacity = remember { Animatable(0f) }
-    val stemWidth = remember { Animatable(0f) }
+    
+    
+    
+    
 
     val extendedStemWidth = 30f
     val bubbleSizeDp = 64.dp
@@ -192,30 +207,30 @@ fun ContactsScreen() {
         }
     }
 
+    var isDragging by remember { mutableStateOf(false) }
+    var bubbleYRaw by remember { mutableStateOf(0f) }
+
+    val bubbleScale by androidx.compose.animation.core.animateFloatAsState(if (isDragging) 1f else 0.2f, androidx.compose.animation.core.tween(if(isDragging) 180 else 300, easing = if(isDragging) androidx.compose.animation.core.FastOutSlowInEasing else androidx.compose.animation.core.CubicBezierEasing(0.6f, -0.1f, 0.75f, 0.15f)))
+    val bubbleOpacity by androidx.compose.animation.core.animateFloatAsState(if (isDragging) 1f else 0f, androidx.compose.animation.core.tween(if(isDragging) 120 else 280))
+    val stemWidthState by androidx.compose.animation.core.animateFloatAsState(if (isDragging) extendedStemWidth else 0f, androidx.compose.animation.core.tween(if(isDragging) 140 else 260, easing = if(isDragging) androidx.compose.animation.core.FastOutSlowInEasing else androidx.compose.animation.core.CubicBezierEasing(0.6f, -0.1f, 0.75f, 0.15f)))
+
     fun onDragAt(yInContainer: Float) {
+        isDragging = true
+        bubbleYRaw = yInContainer
         val relY = (yInContainer - railTopPx).coerceIn(0f, railHeightPx)
         val ratio = (relY / railHeightPx).coerceIn(0f, 1f)
         val idx = (ratio * (LETTERS.size - 1)).toInt().coerceIn(0, LETTERS.size - 1)
         currentLetter = idx
-
-        scope.launch { bubbleY.snapTo(yInContainer) }
-        scope.launch { bubbleScale.animateTo(1f, tween(180)) }
-        scope.launch { bubbleOpacity.animateTo(1f, tween(120)) }
-        scope.launch { stemWidth.animateTo(extendedStemWidth, tween(140)) }
-
         val letter = LETTERS[idx]
         if (letter != lastSnappedLetter) {
             lastSnappedLetter = letter
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
             scope.launch { snapToLetter(letter) }
         }
     }
 
     fun onDragEnd() {
-        val overshoot = CubicBezierEasing(0.6f, -0.1f, 0.75f, 0.15f)
-        scope.launch { bubbleOpacity.animateTo(0f, tween(280)) }
-        scope.launch { bubbleScale.animateTo(0.2f, tween(300, easing = overshoot)) }
-        scope.launch { stemWidth.animateTo(0f, tween(260, easing = overshoot)) }
+        isDragging = false
         currentLetter = -1
         lastSnappedLetter = null
     }
@@ -235,7 +250,7 @@ fun ContactsScreen() {
             )
             
             // Filter Row
-            var selectedFilter by remember { mutableStateOf("All") }
+            
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -270,7 +285,7 @@ fun ContactsScreen() {
                         .padding(end = 26.dp),
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 18.dp)
                 ) {
-                    items(rows) { row ->
+                    items(rows, key = { row -> if (row is DirectoryRow.Header) "H_${row.letter}" else "I_${(row as DirectoryRow.Item).contact.id}" }) { row ->
                         when (row) {
                             is DirectoryRow.Header -> {
                                 Text(
@@ -335,14 +350,14 @@ fun ContactsScreen() {
                         .offset {
                             IntOffset(
                                 x = 0,
-                                y = (bubbleY.value - 4.dp.toPx()).toInt()
+                                y = (bubbleYRaw - 4.dp.toPx()).toInt()
                             )
                         }
                         .align(Alignment.TopEnd)
                         .padding(end = 10.dp)
-                        .width(with(LocalDensity.current) { stemWidth.value.toDp() })
+                        .width(with(LocalDensity.current) { stemWidthState.toDp() })
                         .height(8.dp)
-                        .graphicsLayer { alpha = if (bubbleOpacity.value > 0.05f) 1f else 0f }
+                        .graphicsLayer { alpha = if (bubbleOpacity > 0.05f) 1f else 0f }
                         .background(BubbleColor, RoundedCornerShape(4.dp))
                 )
 
@@ -352,16 +367,16 @@ fun ContactsScreen() {
                         .offset {
                             IntOffset(
                                 x = 0,
-                                y = (bubbleY.value - (bubbleSizeDp / 2).toPx()).toInt()
+                                y = (bubbleYRaw - (bubbleSizeDp / 2).toPx()).toInt()
                             )
                         }
                         .align(Alignment.TopEnd)
                         .padding(end = 34.dp)
                         .size(bubbleSizeDp)
                         .graphicsLayer {
-                            scaleX = bubbleScale.value
-                            scaleY = bubbleScale.value
-                            alpha = bubbleOpacity.value
+                            scaleX = bubbleScale
+                            scaleY = bubbleScale
+                            alpha = bubbleOpacity
                         }
                         .clip(CircleShape)
                         .background(BubbleColor)
@@ -432,6 +447,38 @@ fun ContactsScreen() {
                     androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
                     Spacer(modifier = Modifier.width(16.dp))
                     Text("Delete Contact", fontSize = 16.sp, color = Color.Red)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        scope.launch(Dispatchers.IO) {
+                            val prefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
+                            val blocked = prefs.getStringSet("KEY_BLOCKED_NUMBERS", emptySet())?.toMutableSet() ?: mutableSetOf()
+                            blocked.add(number)
+                            prefs.edit().putStringSet("KEY_BLOCKED_NUMBERS", blocked).commit()
+                        }
+                        android.widget.Toast.makeText(context, "Contact Blocked", android.widget.Toast.LENGTH_SHORT).show()
+                        showContactOptionsFor = null
+                    }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "Block", tint = Color.Red)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Block Contact", fontSize = 16.sp, color = Color.Red)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                            type = android.provider.CallLog.Calls.CONTENT_TYPE
+                            putExtra(android.provider.CallLog.Calls.EXTRA_CALL_TYPE_FILTER, android.provider.CallLog.Calls.INCOMING_TYPE)
+                        }
+                        try { context.startActivity(intent) } catch (e: Exception) { android.widget.Toast.makeText(context, "Action unavailable", android.widget.Toast.LENGTH_SHORT).show() }
+                        showContactOptionsFor = null
+                    }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Edit, contentDescription = "History")
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("View History", fontSize = 16.sp, color = TextPrimary)
                 }
                 Spacer(modifier = Modifier.height(32.dp))
             }

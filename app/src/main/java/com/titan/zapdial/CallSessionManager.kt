@@ -16,6 +16,7 @@ object CallSessionManager {
     val isRecording = MutableStateFlow(false)
 
     var serviceRef: WeakReference<ZapCallService>? = null
+    var isAppInForeground = false
 
     fun answerCall() {
         activeCall.value?.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY)

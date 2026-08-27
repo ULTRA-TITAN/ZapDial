@@ -137,18 +137,18 @@ fun OngoingCallScreen(callerName: String = "Unknown Caller", callerNumber: Strin
 
     val isSpeakerOn = audioState?.route == CallAudioState.ROUTE_SPEAKER
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(ColorCreamBackground)
-            .systemBarsPadding()
+            .systemBarsPadding(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // --- Top Caller Identity Section ---
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.TopCenter)
                 .padding(top = 64.dp)
         ) {
             Box(
@@ -256,11 +256,12 @@ fun OngoingCallScreen(callerName: String = "Unknown Caller", callerNumber: Strin
             }
         }
 
+        Spacer(modifier = Modifier.weight(1f))
+
         // --- Compact Bottom Controls Cluster ---
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.BottomCenter)
                 .padding(bottom = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

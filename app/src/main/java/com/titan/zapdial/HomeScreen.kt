@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.telecom.PhoneAccountHandle
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.provider.CallLog
 import android.provider.ContactsContract
@@ -28,6 +29,9 @@ import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallMissed
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CallMissed
+import androidx.compose.material.icons.filled.CallReceived
+import androidx.compose.material.icons.filled.CallMade
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
@@ -126,16 +130,23 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
 
     val view = LocalView.current
     val sharedPrefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
-    var mistouchPrevention by remember {
-        mutableStateOf(sharedPrefs.getBoolean("KEY_MISTOUCH_PREVENTION", false))
-    }
+    var mistouchPrevention by remember { mutableStateOf(false) }
     var callHistory by remember { mutableStateOf<List<HomeCallItem>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            mistouchPrevention = sharedPrefs.getBoolean("KEY_MISTOUCH_PREVENTION", false)
+        }
+    }
     var allContacts by remember { mutableStateOf<List<Contact>>(emptyList()) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    var showFrequentContacts by remember {
-        mutableStateOf(sharedPrefs.getBoolean("KEY_SHOW_FREQUENT", true))
+    var showFrequentContacts by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            showFrequentContacts = sharedPrefs.getBoolean("KEY_SHOW_FREQUENT", true)
+        }
     }
     var selectedHistoryContact by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -348,11 +359,13 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
                                 item {
                                     Text("Select a Favorite", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
                                 }
-                                items(allContacts) { contact ->
+                                items(allContacts, key = { it.id }) { contact ->
                                     Row(modifier = Modifier.fillMaxWidth().clickable {
                                         if (!favoriteNumbers.contains(contact.phoneNumber)) {
                                             favoriteNumbers.add(contact.phoneNumber)
-                                            sharedPrefs.edit().putStringSet("KEY_FAVORITES", favoriteNumbers.toSet()).apply()
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                sharedPrefs.edit().putStringSet("KEY_FAVORITES", favoriteNumbers.toSet()).commit()
+                                            }
                                         }
                                         showContactPicker = false
                                     }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -541,7 +554,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(matchingCalls) { call ->
+                        items(matchingCalls, key = { it.id }) { call ->
                             val isMissed = call.type == CallLog.Calls.MISSED_TYPE
                             val relativeTime = DateUtils.getRelativeTimeSpanString(
                                 call.date, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
@@ -632,16 +645,28 @@ fun CallHistoryItemCard(
     }
     
     val displayName = item.name ?: item.number
-    val relativeTime = DateUtils.getRelativeTimeSpanString(
-        item.date, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
+    val relativeTime = android.text.format.DateUtils.getRelativeTimeSpanString(
+        item.date, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
     ).toString()
     
     val isMissed = item.type == CallLog.Calls.MISSED_TYPE
-    val statusColor = if (isMissed) ColorRedMissed else TextSecondary
+    val isIncoming = item.type == CallLog.Calls.INCOMING_TYPE
+    
+    val statusColor = if (isMissed) androidx.compose.ui.graphics.Color(0xFFB3574F) else androidx.compose.ui.graphics.Color(0xFF9A9AA2)
+    val statusText = when {
+        isMissed -> "Missed"
+        isIncoming -> "Incoming"
+        else -> "Outgoing"
+    }
+    val statusIcon = when {
+        isMissed -> Icons.AutoMirrored.Filled.CallMissed
+        isIncoming -> Icons.AutoMirrored.Filled.CallReceived
+        else -> Icons.AutoMirrored.Filled.CallMade
+    }
     
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = PlateBackground),
+        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFFFFFF)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -660,74 +685,106 @@ fun CallHistoryItemCard(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Left Avatar
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(50.dp).clip(CircleShape).background(getAvatarColor(displayName))
+                    modifier = Modifier.size(46.dp).clip(CircleShape).background(getAvatarColor(displayName))
                 ) {
                     Text(
                         text = displayName.take(1).uppercase(),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Light,
+                        color = androidx.compose.ui.graphics.Color(0xFF44444C)
                     )
                 }
                 Spacer(modifier = Modifier.width(16.dp))
 
+                // Middle Column
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = displayName,
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Normal,
-                        color = if (isMissed) ColorRedMissed else TextPrimary,
+                        color = androidx.compose.ui.graphics.Color(0xFF2A2A2E),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     
-                    Spacer(modifier = Modifier.height(3.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     
                     Text(
                         text = "${item.location} • $relativeTime",
-                        fontSize = 13.sp,
-                        color = TextSecondary,
+                        fontSize = 12.5.sp,
+                        color = androidx.compose.ui.graphics.Color(0xFF9A9AA2),
                         fontWeight = FontWeight.Light
                     )
                     
-                    Spacer(modifier = Modifier.height(3.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     
-                    Text(
-                        text = item.simName,
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        fontWeight = FontWeight.Light
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${item.simName} • ",
+                            fontSize = 12.5.sp,
+                            color = androidx.compose.ui.graphics.Color(0xFF9A9AA2),
+                            fontWeight = FontWeight.Normal
+                        )
+                        Icon(
+                            imageVector = statusIcon,
+                            contentDescription = statusText,
+                            tint = statusColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = statusText,
+                            fontSize = 12.5.sp,
+                            color = statusColor,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
                 }
                 
-                IconButton(onClick = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                        if (mistouchPrevention) callToConfirm = item.number else CallManager.initiateCallWithSimCheck(context, item.number) { sims ->
-                                                    availableSimsForCall = sims
-                                                    showSimSelectionFor = item.number
-                                                }
-                    } else {
-                        callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
-                    }
-                }) {
-                    Icon(Icons.Default.Call, contentDescription = "Call", tint = ColorGreenSuccess)
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                // Right Call Button
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(androidx.compose.ui.graphics.Color(0xFF4C8B62).copy(alpha = 0.14f))
+                        .clickable {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                                if (mistouchPrevention) callToConfirm = item.number else CallManager.initiateCallWithSimCheck(context, item.number) { sims ->
+                                    availableSimsForCall = sims
+                                    showSimSelectionFor = item.number
+                                }
+                            } else {
+                                callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+                            }
+                        }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Call,
+                        contentDescription = "Call",
+                        tint = androidx.compose.ui.graphics.Color(0xFF4C8B62),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
-
+            
             AnimatedVisibility(visible = expanded) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFFAFAF9))
+                        .background(androidx.compose.ui.graphics.Color(0xFFFDFCFA))
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
                         onClick = onViewHistory,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -736,14 +793,36 @@ fun CallHistoryItemCard(
                     }
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
-                                type = ContactsContract.Contacts.CONTENT_ITEM_TYPE
-                                putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, item.number)
+                            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                var contactId: String? = null
+                                try {
+                                    val uri = android.net.Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, android.net.Uri.encode(item.number))
+                                    context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)?.use { cursor ->
+                                        if (cursor.moveToFirst()) {
+                                            val idIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup._ID)
+                                            if (idIdx != -1) contactId = cursor.getString(idIdx)
+                                        }
+                                    }
+                                } catch(e: Exception) {}
+                                
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    if (contactId != null) {
+                                        val editIntent = Intent(Intent.ACTION_EDIT).apply {
+                                            data = android.net.Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contactId)
+                                        }
+                                        try { context.startActivity(editIntent) } catch(e: Exception) {}
+                                    } else {
+                                        val insertIntent = Intent(Intent.ACTION_INSERT).apply {
+                                            type = ContactsContract.RawContacts.CONTENT_TYPE
+                                            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, item.number)
+                                        }
+                                        try { context.startActivity(insertIntent) } catch(e: Exception) {}
+                                    }
+                                }
                             }
-                            try { context.startActivity(intent) } catch(e: Exception) {}
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -754,7 +833,6 @@ fun CallHistoryItemCard(
             }
         }
     }
-
     if (showLongPressMenu) {
         ModalBottomSheet(
             onDismissRequest = { showLongPressMenu = false },

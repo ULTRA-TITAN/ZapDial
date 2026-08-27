@@ -23,7 +23,7 @@ class CallActionReceiver : BroadcastReceiver() {
                 val mainIntent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
-                context.startActivity(mainIntent)
+                try { context.startActivity(mainIntent) } catch (e: Exception) { android.widget.Toast.makeText(context, "Action unavailable", android.widget.Toast.LENGTH_SHORT).show() }
             }
             ACTION_SILENCE -> {
                 try {

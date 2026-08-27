@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import kotlinx.coroutines.launch
 import android.content.Intent
 import android.os.Build
 import android.telecom.Call
@@ -70,10 +71,10 @@ class ZapCallService : InCallService() {
 
         // Launch UI for incoming/outgoing call
         if (call.state == Call.STATE_RINGING || call.state == Call.STATE_DIALING || call.state == Call.STATE_CONNECTING || call.state == Call.STATE_ACTIVE) {
-            val intent = Intent(this, MainActivity::class.java).apply {
+            val intent = Intent(this@ZapCallService, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
-            startActivity(intent)
+            try { startActivity(intent) } catch (e: Exception) { android.widget.Toast.makeText(this@ZapCallService, "Action unavailable", android.widget.Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -108,16 +109,20 @@ class ZapCallService : InCallService() {
 
     private fun updateNotification(call: Call) {
         val callerNumber = call.details?.handle?.schemeSpecificPart ?: "Unknown"
-        val callerName = call.details?.callerDisplayName ?: callerNumber
+        val originalName = call.details?.callerDisplayName
         
-        val intent = Intent(this, MainActivity::class.java).apply {
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val resolvedName = if (callerNumber != "Unknown") ContactFetcher.lookupContactName(this@ZapCallService, callerNumber) else null
+            val callerName = resolvedName ?: originalName ?: callerNumber
+        
+        val intent = Intent(this@ZapCallService, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            this@ZapCallService, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notificationBuilder = NotificationCompat.Builder(this@ZapCallService, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_phone_call)
             .setContentTitle(callerName)
             .setContentText(callerNumber)
@@ -134,15 +139,15 @@ class ZapCallService : InCallService() {
             notificationBuilder.setColor(android.graphics.Color.parseColor("#1A1424"))
             
             val declineIntent = Intent(CallActionReceiver.ACTION_END_CALL).apply { setPackage(packageName) }
-            val declinePendingIntent = PendingIntent.getBroadcast(this, 1, declineIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val declinePendingIntent = PendingIntent.getBroadcast(this@ZapCallService, 1, declineIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val declineAction = NotificationCompat.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent).build()
             
             val answerIntent = Intent(CallActionReceiver.ACTION_ANSWER).apply { setPackage(packageName) }
-            val answerPendingIntent = PendingIntent.getBroadcast(this, 2, answerIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val answerPendingIntent = PendingIntent.getBroadcast(this@ZapCallService, 2, answerIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val answerAction = NotificationCompat.Action.Builder(android.R.drawable.stat_sys_phone_call, "Answer", answerPendingIntent).build()
             
             val silenceIntent = Intent(CallActionReceiver.ACTION_SILENCE).apply { setPackage(packageName) }
-            val silencePendingIntent = PendingIntent.getBroadcast(this, 3, silenceIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val silencePendingIntent = PendingIntent.getBroadcast(this@ZapCallService, 3, silenceIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val silenceAction = NotificationCompat.Action.Builder(android.R.drawable.ic_lock_silent_mode_off, "Silence", silencePendingIntent).build()
             
             notificationBuilder.addAction(declineAction)
@@ -153,13 +158,13 @@ class ZapCallService : InCallService() {
             notificationBuilder.setColor(android.graphics.Color.parseColor("#0F172A"))
             
             val muteIntent = Intent(CallActionReceiver.ACTION_TOGGLE_MUTE).apply { setPackage(packageName) }
-            val mutePendingIntent = PendingIntent.getBroadcast(this, 4, muteIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val mutePendingIntent = PendingIntent.getBroadcast(this@ZapCallService, 4, muteIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val muteIcon = if (isMuted) android.R.drawable.ic_lock_silent_mode_off else android.R.drawable.ic_btn_speak_now
             val muteLabel = if (isMuted) "Unmute" else "Mute"
             val muteAction = NotificationCompat.Action.Builder(muteIcon, muteLabel, mutePendingIntent).build()
             
             val endCallIntent = Intent(CallActionReceiver.ACTION_END_CALL).apply { setPackage(packageName) }
-            val endCallPendingIntent = PendingIntent.getBroadcast(this, 5, endCallIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val endCallPendingIntent = PendingIntent.getBroadcast(this@ZapCallService, 5, endCallIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val endCallAction = NotificationCompat.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "End Call", endCallPendingIntent).build()
             
             notificationBuilder.addAction(muteAction)
@@ -173,7 +178,17 @@ class ZapCallService : InCallService() {
         }
         
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
+        if (!CallSessionManager.isAppInForeground) {
+            notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
+        }
+        
+        if (call.state == Call.STATE_RINGING) {
+            val intent = Intent(this@ZapCallService, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            try { startActivity(intent) } catch (e: Exception) { android.widget.Toast.makeText(this@ZapCallService, "Action unavailable", android.widget.Toast.LENGTH_SHORT).show() }
+        }
+        }
     }
 
     private fun cancelNotification() {

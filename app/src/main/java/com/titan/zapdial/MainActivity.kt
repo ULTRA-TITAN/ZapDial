@@ -55,8 +55,29 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() {
+        super.onResume()
+        CallSessionManager.isAppInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CallSessionManager.isAppInForeground = false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             MaterialTheme {
                 Surface(
@@ -72,13 +93,27 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigationContainer(intent: Intent?) {
-    
-
+    val context = LocalContext.current
     val callState by CallSessionManager.callState.collectAsState()
     val activeCall by CallSessionManager.activeCall.collectAsState()
-
-    val callerNumber = activeCall?.details?.handle?.schemeSpecificPart ?: "Unknown Number"
-    val callerName = activeCall?.details?.callerDisplayName ?: callerNumber
+    
+    val rawCallerNumber = activeCall?.details?.handle?.schemeSpecificPart ?: "Unknown Number"
+    var resolvedCallerName by remember { mutableStateOf<String?>(null) }
+    
+    LaunchedEffect(rawCallerNumber) {
+        if (rawCallerNumber != "Unknown Number") {
+            val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ContactFetcher.lookupContactName(context, rawCallerNumber)
+            }
+            resolvedCallerName = name
+        } else {
+            resolvedCallerName = null
+        }
+    }
+    
+    val callerNumber = rawCallerNumber
+    val originalCallerName = activeCall?.details?.callerDisplayName
+    val callerName = resolvedCallerName ?: originalCallerName ?: callerNumber
 
     if (callState == Call.STATE_RINGING) {
         IncomingCallScreen(

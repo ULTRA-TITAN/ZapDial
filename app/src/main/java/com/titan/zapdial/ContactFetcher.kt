@@ -48,7 +48,7 @@ object ContactFetcher {
 
             val projection = arrayOf(
                 ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
                 ContactsContract.CommonDataKinds.Phone.NUMBER,
                 ContactsContract.CommonDataKinds.Phone.PHOTO_URI
             )
@@ -56,20 +56,24 @@ object ContactFetcher {
             try {
                 val cursor = contentResolver.query(
                     ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                    projection, null, null,
-                    "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
+                    projection,
+                    "${ContactsContract.Data.IN_VISIBLE_GROUP} = 1", null,
+                    "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} ASC"
                 )
                 
                 cursor?.use {
                     val idIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
-                    val nameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val nameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY)
                     val numberIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
                     val photoIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
                     
                     while (it.moveToNext()) {
                         val id = if (idIndex != -1) it.getString(idIndex).orEmpty() else ""
-                        val name = if (nameIndex != -1) it.getString(nameIndex).orEmpty() else "Unknown"
                         val rawNumber = if (numberIndex != -1) it.getString(numberIndex).orEmpty() else ""
+                        var name = if (nameIndex != -1) it.getString(nameIndex).orEmpty() else ""
+                        if (name.isBlank() || name == "Unknown") {
+                            name = android.telephony.PhoneNumberUtils.formatNumber(rawNumber, java.util.Locale.getDefault().country) ?: rawNumber
+                        }
                         val photoUriString = if (photoIndex != -1) it.getString(photoIndex) else null
                         
                         val photoUri = photoUriString?.let { uriStr -> 
@@ -98,5 +102,27 @@ object ContactFetcher {
         contactsList.distinctBy {
             "${it.name}_${it.phoneNumber.replace("[^0-9+]".toRegex(), "")}"
         }
+    }
+
+    fun lookupContactName(context: Context, phoneNumber: String): String? {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+        var contactName: String? = null
+        try {
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+            val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (nameIdx != -1) {
+                        contactName = cursor.getString(nameIdx)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return contactName
     }
 }

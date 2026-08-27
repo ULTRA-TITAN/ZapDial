@@ -230,12 +230,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                         try {
                             val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
                             val intent = telecomManager.createManageBlockedNumbersIntent()
-                            context.startActivity(intent)
+                            try { context.startActivity(intent) } catch (e: Exception) { android.widget.Toast.makeText(context, "Action unavailable", android.widget.Toast.LENGTH_SHORT).show() }
                         } catch (e: Exception) {
                             try {
                                 val intent = Intent("android.intent.action.MAIN")
                                 intent.setClassName("com.android.phone", "com.android.phone.settings.BlockedNumberActivity")
-                                context.startActivity(intent)
+                                try { context.startActivity(intent) } catch (e: Exception) { android.widget.Toast.makeText(context, "Action unavailable", android.widget.Toast.LENGTH_SHORT).show() }
                             } catch (e2: Exception) {}
                         }
                     }
