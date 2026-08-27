@@ -2,6 +2,7 @@ package com.titan.zapdial
 
 import android.Manifest
 import android.content.Context
+import android.telecom.PhoneAccountHandle
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.CallLog
@@ -60,6 +61,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
 import android.text.format.DateUtils
 
@@ -107,6 +109,21 @@ data class HomeCallItem(
 @Composable
 fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
     val context = LocalContext.current
+    var showSimSelectionFor by remember { mutableStateOf<String?>(null) }
+    var availableSimsForCall by remember { mutableStateOf<List<android.telecom.PhoneAccountHandle>>(emptyList()) }
+    
+    if (showSimSelectionFor != null) {
+        SimSelectionDialog(
+            context = context,
+            availableSims = availableSimsForCall,
+            onSimSelected = { handle ->
+                CallManager.makeCall(context, showSimSelectionFor!!, handle)
+                showSimSelectionFor = null
+            },
+            onDismiss = { showSimSelectionFor = null }
+        )
+    }
+
     val view = LocalView.current
     val sharedPrefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
     var mistouchPrevention by remember {
@@ -145,7 +162,10 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
         hasCallLogPermission = isGranted
         if (isGranted) {
             coroutineScope.launch {
-                callHistory = CallLogFetcher.fetchCallHistory(context, defaultLocation, allContacts)
+                val history = withContext(Dispatchers.IO) {
+                    CallLogFetcher.fetchCallHistory(context, defaultLocation, allContacts)
+                }
+                callHistory = history
             }
         }
     }
@@ -174,15 +194,20 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
     }
 
     LaunchedEffect(hasCallLogPermission, allContacts) {
-
         if (hasCallLogPermission) {
-            callHistory = CallLogFetcher.fetchCallHistory(context, defaultLocation, allContacts)
+            val history = withContext(Dispatchers.IO) {
+                CallLogFetcher.fetchCallHistory(context, defaultLocation, allContacts)
+            }
+            callHistory = history
         }
     }
 
     LaunchedEffect(Unit) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-            allContacts = ContactFetcher.fetchContacts(context)
+            val contacts = withContext(Dispatchers.IO) {
+                ContactFetcher.fetchContacts(context)
+            }
+            allContacts = contacts
         }
     }
 
@@ -190,7 +215,12 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
         CallConfirmationDialog(
             name = name,
             number = number,
-            onConfirm = { CallManager.makeCall(context, number) },
+            onConfirm = { 
+                CallManager.initiateCallWithSimCheck(context, number) { sims -> 
+                    availableSimsForCall = sims
+                    showSimSelectionFor = number 
+                } 
+            },
             onDismiss = { callToConfirm = null }
         )
     }
@@ -279,7 +309,10 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
                                     if (mistouchPrevention) {
                                         callToConfirm = Pair(contact.name, contact.phoneNumber)
                                     } else {
-                                        CallManager.makeCall(context, contact.phoneNumber)
+                                        CallManager.initiateCallWithSimCheck(context, contact.phoneNumber) { sims ->
+                                            availableSimsForCall = sims
+                                            showSimSelectionFor = contact.phoneNumber
+                                        }
                                     }
                                 }
                                 .padding(vertical = 12.dp, horizontal = 8.dp),
@@ -346,7 +379,10 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
                                         if (mistouchPrevention) {
                                             callToConfirm = Pair(contact.name, contact.phoneNumber)
                                         } else {
-                                            CallManager.makeCall(context, contact.phoneNumber)
+                                            CallManager.initiateCallWithSimCheck(context, contact.phoneNumber) { sims ->
+                                            availableSimsForCall = sims
+                                            showSimSelectionFor = contact.phoneNumber
+                                        }
                                         }
                                     },
                                     onLongClick = {
@@ -547,6 +583,7 @@ fun HomeScreen(onNavigateToSettings: () -> Unit = {}) {
 }
 
 @androidx.compose.material3.ExperimentalMaterial3Api
+@androidx.compose.foundation.ExperimentalFoundationApi
 @Composable
 fun CallHistoryItemCard(
     item: HomeCallItem, 
@@ -559,12 +596,29 @@ fun CallHistoryItemCard(
     var expanded by remember { mutableStateOf(false) }
     var callToConfirm by remember { mutableStateOf<String?>(null) }
     var showLongPressMenu by remember { mutableStateOf(false) }
+    var showSimSelectionFor by remember { mutableStateOf<String?>(null) }
+    var availableSimsForCall by remember { mutableStateOf<List<android.telecom.PhoneAccountHandle>>(emptyList()) }
+    
+    if (showSimSelectionFor != null) {
+        SimSelectionDialog(
+            context = context,
+            availableSims = availableSimsForCall,
+            onSimSelected = { handle ->
+                CallManager.makeCall(context, showSimSelectionFor!!, handle)
+                showSimSelectionFor = null
+            },
+            onDismiss = { showSimSelectionFor = null }
+        )
+    }
     
     val callPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            if (mistouchPrevention) callToConfirm = item.number else CallManager.makeCall(context, item.number)
+            if (mistouchPrevention) callToConfirm = item.number else CallManager.initiateCallWithSimCheck(context, item.number) { sims ->
+                                                    availableSimsForCall = sims
+                                                    showSimSelectionFor = item.number
+                                                }
         }
     }
     
@@ -572,7 +626,7 @@ fun CallHistoryItemCard(
         CallConfirmationDialog(
             name = item.name,
             number = num,
-            onConfirm = { CallManager.makeCall(context, num) },
+            onConfirm = { CallManager.initiateCallWithSimCheck(context, num) { sims -> availableSimsForCall = sims; showSimSelectionFor = num } },
             onDismiss = { callToConfirm = null }
         )
     }
@@ -591,15 +645,13 @@ fun CallHistoryItemCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { expanded = !expanded },
-                    onLongPress = { 
-                        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                        showLongPressMenu = true
-                    }
-                )
-            }
+            .combinedClickable(
+                onClick = { expanded = !expanded },
+                onLongClick = { 
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    showLongPressMenu = true
+                }
+            )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -652,7 +704,10 @@ fun CallHistoryItemCard(
                 
                 IconButton(onClick = {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                        if (mistouchPrevention) callToConfirm = item.number else CallManager.makeCall(context, item.number)
+                        if (mistouchPrevention) callToConfirm = item.number else CallManager.initiateCallWithSimCheck(context, item.number) { sims ->
+                                                    availableSimsForCall = sims
+                                                    showSimSelectionFor = item.number
+                                                }
                     } else {
                         callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
                     }

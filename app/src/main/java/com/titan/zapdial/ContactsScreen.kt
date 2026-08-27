@@ -2,6 +2,7 @@ package com.titan.zapdial
 
 import android.Manifest
 import android.content.Context
+import android.telecom.PhoneAccountHandle
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -98,6 +99,21 @@ private sealed class DirectoryRow {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun ContactsScreen() {
     val context = LocalContext.current
+    var showSimSelectionFor by remember { mutableStateOf<String?>(null) }
+    var availableSimsForCall by remember { mutableStateOf<List<android.telecom.PhoneAccountHandle>>(emptyList()) }
+    
+    if (showSimSelectionFor != null) {
+        SimSelectionDialog(
+            context = context,
+            availableSims = availableSimsForCall,
+            onSimSelected = { handle ->
+                CallManager.makeCall(context, showSimSelectionFor!!, handle)
+                showSimSelectionFor = null
+            },
+            onDismiss = { showSimSelectionFor = null }
+        )
+    }
+
     var allContacts by remember { mutableStateOf<List<Contact>>(emptyList()) }
     
     LaunchedEffect(Unit) {
@@ -372,7 +388,10 @@ fun ContactsScreen() {
                 
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable {
-                        CallManager.makeCall(context, number)
+                        CallManager.initiateCallWithSimCheck(context, number) { sims ->
+                            availableSimsForCall = sims
+                            showSimSelectionFor = number
+                        }
                         showContactOptionsFor = null
                     }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -427,13 +446,30 @@ private fun ContactPlate(contact: Contact, onClick: () -> Unit) {
     val context = LocalContext.current
     val sharedPrefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
     var callToConfirm by remember { mutableStateOf<String?>(null) }
+    var showSimSelectionFor by remember { mutableStateOf<String?>(null) }
+    var availableSimsForCall by remember { mutableStateOf<List<android.telecom.PhoneAccountHandle>>(emptyList()) }
+    
+    if (showSimSelectionFor != null) {
+        SimSelectionDialog(
+            context = context,
+            availableSims = availableSimsForCall,
+            onSimSelected = { handle ->
+                CallManager.makeCall(context, showSimSelectionFor!!, handle)
+                showSimSelectionFor = null
+            },
+            onDismiss = { showSimSelectionFor = null }
+        )
+    }
     
     val callPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             val mistouchPrevention = sharedPrefs.getBoolean("KEY_MISTOUCH_PREVENTION", false)
-            if (mistouchPrevention) callToConfirm = contact.phoneNumber else CallManager.makeCall(context, contact.phoneNumber)
+            if (mistouchPrevention) callToConfirm = contact.phoneNumber else CallManager.initiateCallWithSimCheck(context, contact.phoneNumber) { sims ->
+                availableSimsForCall = sims
+                showSimSelectionFor = contact.phoneNumber
+            }
         }
     }
     
@@ -441,7 +477,10 @@ private fun ContactPlate(contact: Contact, onClick: () -> Unit) {
         CallConfirmationDialog(
             name = contact.name,
             number = num,
-            onConfirm = { CallManager.makeCall(context, num) },
+            onConfirm = { CallManager.initiateCallWithSimCheck(context, num) { sims ->
+                availableSimsForCall = sims
+                showSimSelectionFor = num
+            } },
             onDismiss = { callToConfirm = null }
         )
     }

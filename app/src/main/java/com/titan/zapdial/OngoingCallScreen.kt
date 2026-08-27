@@ -85,6 +85,25 @@ fun OngoingCallScreen(callerName: String = "Unknown Caller", callerNumber: Strin
 
     
     var activeNumber = callerNumber
+    var simLabel by remember { mutableStateOf<String?>(null) }
+    val callDetails = activeCall?.details
+    val accountHandle = callDetails?.accountHandle
+    
+    LaunchedEffect(accountHandle) {
+        if (accountHandle != null) {
+            val telecomManager = context.getSystemService(android.content.Context.TELECOM_SERVICE) as android.telecom.TelecomManager
+            val label = telecomManager.getPhoneAccount(accountHandle)?.label?.toString()
+            if (label != null) {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+                    val sims = CallManager.getAvailableSims(context)
+                    if (sims.size > 1) {
+                        val index = sims.indexOf(accountHandle)
+                        simLabel = if (index != -1) "SIM ${index + 1} • $label" else label
+                    }
+                }
+            }
+        }
+    }
     activeCall?.details?.handle?.schemeSpecificPart?.let {
         activeNumber = it
     }
@@ -157,7 +176,43 @@ fun OngoingCallScreen(callerName: String = "Unknown Caller", callerNumber: Strin
             Text(
                 text = activeNumber,
                 fontSize = 17.sp,
-                color = ColorSlateGray,
+                color = ColorSlateGray
+            )
+            if (simLabel != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ColorSlateGray.copy(alpha = 0.15f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "via $simLabel",
+                        fontSize = 12.sp,
+                        color = ColorSlateGray,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            if (simLabel != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ColorSlateGray.copy(alpha = 0.15f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "via $simLabel",
+                        fontSize = 12.sp,
+                        color = ColorSlateGray,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            Text(
+                text = "",
+                fontSize = 0.sp,
                 fontWeight = FontWeight.Light
             )
             Spacer(modifier = Modifier.height(28.dp))

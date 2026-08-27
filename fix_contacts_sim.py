@@ -1,6 +1,6 @@
 import re
 
-with open("app/src/main/java/com/titan/zapdial/DialPadScreen.kt", "r") as f:
+with open("app/src/main/java/com/titan/zapdial/ContactsScreen.kt", "r") as f:
     content = f.read()
 
 # Add states for SimSelection
@@ -24,13 +24,13 @@ state_add = """
 """
 content = content.replace("    Scaffold(", state_add)
 
-old_call = """CallManager.makeCall(context, phoneNumber)"""
-new_call = """CallManager.initiateCallWithSimCheck(context, phoneNumber) { sims ->
-                                    availableSimsForCall = sims
-                                    showSimSelectionFor = phoneNumber
-                                }"""
+old_call = """CallManager.makeCall(context, number)"""
+new_call = """CallManager.initiateCallWithSimCheck(context, number) { sims ->
+                            availableSimsForCall = sims
+                            showSimSelectionFor = number
+                        }"""
 
 content = content.replace(old_call, new_call)
 
-with open("app/src/main/java/com/titan/zapdial/DialPadScreen.kt", "w") as f:
+with open("app/src/main/java/com/titan/zapdial/ContactsScreen.kt", "w") as f:
     f.write(content)

@@ -2,6 +2,7 @@ package com.titan.zapdial
 
 import android.Manifest
 import android.content.Context
+import android.telecom.PhoneAccountHandle
 import android.content.pm.PackageManager
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,6 +60,21 @@ fun DialPadScreen() {
     val coroutineScope = rememberCoroutineScope()
     var allContacts by remember { mutableStateOf<List<Contact>>(emptyList()) }
     val context = LocalContext.current
+    var showSimSelectionFor by remember { mutableStateOf<String?>(null) }
+    var availableSimsForCall by remember { mutableStateOf<List<android.telecom.PhoneAccountHandle>>(emptyList()) }
+    
+    if (showSimSelectionFor != null) {
+        SimSelectionDialog(
+            context = context,
+            availableSims = availableSimsForCall,
+            onSimSelected = { handle ->
+                CallManager.makeCall(context, showSimSelectionFor!!, handle)
+                showSimSelectionFor = null
+            },
+            onDismiss = { showSimSelectionFor = null }
+        )
+    }
+
     val view = LocalView.current
     val sharedPrefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
     
@@ -103,7 +119,7 @@ fun DialPadScreen() {
         if (mistouchPrevention) {
             callToConfirm = num
         } else {
-            CallManager.makeCall(context, num)
+            CallManager.initiateCallWithSimCheck(context, num) { sims -> availableSimsForCall = sims; showSimSelectionFor = num }
             number = ""
         }
     }
@@ -121,7 +137,7 @@ fun DialPadScreen() {
             name = null,
             number = num,
             onConfirm = {
-                CallManager.makeCall(context, num)
+                CallManager.initiateCallWithSimCheck(context, num) { sims -> availableSimsForCall = sims; showSimSelectionFor = num }
                 number = ""
                 callToConfirm = null
             },

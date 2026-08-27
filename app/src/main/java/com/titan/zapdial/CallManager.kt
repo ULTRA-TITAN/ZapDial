@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
+import android.telecom.PhoneAccountHandle
+import android.telephony.SubscriptionManager
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 
@@ -36,7 +38,40 @@ object CallManager {
      * Dials a given phone number directly.
      * Sanitizes input to avoid invalid dial string crashes.
      */
-    fun makeCall(context: Context, rawPhoneNumber: String) {
+    fun getAvailableSims(context: Context): List<PhoneAccountHandle> {
+        val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+            val activeSubs = android.telephony.SubscriptionManager.from(context).activeSubscriptionInfoList
+            return telecomManager.callCapablePhoneAccounts
+        }
+        return emptyList()
+    }
+
+    fun getSimLabel(context: Context, handle: PhoneAccountHandle): String {
+        val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+        return telecomManager.getPhoneAccount(handle)?.label?.toString() ?: "Unknown SIM"
+    }
+
+
+    fun initiateCallWithSimCheck(context: Context, number: String, showSimSelection: (List<PhoneAccountHandle>) -> Unit) {
+        val sharedPrefs = context.getSharedPreferences("ZapDialPrefs", Context.MODE_PRIVATE)
+        val defaultSimSlot = sharedPrefs.getInt("KEY_DEFAULT_SIM_SLOT", -1)
+        val availableSims = getAvailableSims(context)
+        
+        if (availableSims.isEmpty()) {
+            makeCall(context, number)
+        } else if (availableSims.size == 1) {
+            makeCall(context, number, availableSims[0])
+        } else {
+            if (defaultSimSlot == -1 || defaultSimSlot >= availableSims.size) {
+                showSimSelection(availableSims)
+            } else {
+                makeCall(context, number, availableSims[defaultSimSlot])
+            }
+        }
+    }
+
+    fun makeCall(context: Context, rawPhoneNumber: String, accountHandle: PhoneAccountHandle? = null) {
         if (!isDefaultDialer(context)) {
             requestDefaultDialer(context)
             return
@@ -59,7 +94,12 @@ object CallManager {
             try {
                 telecomManager.placeCall(
                     Uri.parse("tel:$cleanNumber"),
-                    Bundle().apply { putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false) }
+                    Bundle().apply { 
+                        putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false)
+                        if (accountHandle != null) {
+                            putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, accountHandle)
+                        }
+                    }
                 )
             } catch (e: SecurityException) {
                 Toast.makeText(context, "Call failed: Permission denied", Toast.LENGTH_SHORT).show()

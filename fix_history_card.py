@@ -1,10 +1,10 @@
 import re
 
-with open("app/src/main/java/com/titan/zapdial/DialPadScreen.kt", "r") as f:
+with open("app/src/main/java/com/titan/zapdial/HomeScreen.kt", "r") as f:
     content = f.read()
 
-# Add states for SimSelection
-state_add = """
+state_insert = """    var showLongPressMenu by remember { mutableStateOf(false) }"""
+new_state = """    var showLongPressMenu by remember { mutableStateOf(false) }
     var showSimSelectionFor by remember { mutableStateOf<String?>(null) }
     var availableSimsForCall by remember { mutableStateOf<List<android.telecom.PhoneAccountHandle>>(emptyList()) }
     
@@ -18,19 +18,9 @@ state_add = """
             },
             onDismiss = { showSimSelectionFor = null }
         )
-    }
+    }"""
 
-    Scaffold(
-"""
-content = content.replace("    Scaffold(", state_add)
+content = content.replace(state_insert, new_state)
 
-old_call = """CallManager.makeCall(context, phoneNumber)"""
-new_call = """CallManager.initiateCallWithSimCheck(context, phoneNumber) { sims ->
-                                    availableSimsForCall = sims
-                                    showSimSelectionFor = phoneNumber
-                                }"""
-
-content = content.replace(old_call, new_call)
-
-with open("app/src/main/java/com/titan/zapdial/DialPadScreen.kt", "w") as f:
+with open("app/src/main/java/com/titan/zapdial/HomeScreen.kt", "w") as f:
     f.write(content)
