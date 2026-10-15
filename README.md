@@ -49,7 +49,7 @@
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/ZapDial.git
+git clone https://github.com/ultra-titan/ZapDial.git
 ````
 
 ### 2\. Open in Android Studio
@@ -78,5 +78,3 @@ ZapDial is open-source software released under the MIT License. Feel free to for
 
 ```
 
-**Small reminder:** Replace `your-username` with your actual GitHub username in the clone URL.
-```
